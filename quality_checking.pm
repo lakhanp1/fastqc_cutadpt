@@ -29,13 +29,9 @@ sub fastQc{
 	
 	if($? != 0){
 		print STDERR "Error: Failed to execute fastqc on data $fqFiles";
-		#return -1;
 		die;
 	}
 	else{
-		system("cd $fastqcOut
-		echo $ENV{PWD}
-		unzip \\*.zip");
 		print "Finished: FastQc analysis for data $fqFiles\n\n";
 		return 1;
 	}
@@ -46,16 +42,25 @@ sub fastQc{
 sub qualityTrimming{
 	my $sampleInfo = shift @_;
 	my $fastqcOut = shift @_;
+	my $cutadaptOut = shift @_;
+	
+	if(!-d $cutadaptOut){
+		mkdir($cutadaptOut, 0755) or die "Cannot create directory $cutadaptOut: $!";
+	}
 	
 	print "Running cutadapt to trim adapter and low quality ends from ",$sampleInfo->{'lib'}," reads\n";
+	
+	my $cutadaptSE = 'cutadapt --cores 0 -q 20 --nextseq-trim=20 --minimum-length 20';
+	my $cutadaptPE = 'cutadapt --cores 0 -q 20 -q 20 --nextseq-trim=20 --nextseq-trim=20 --minimum-length 20 --minimum-length 20';
+
 	my $adapterFwd = '-b XXX ';
 	my $adapterRev = '-B XXX ';
 	my $pair1File = '';
 	my $pair2File = '';
 	my $pair1Trimmed = '';
 	my $pair2Trimmed = '';
-	my $pair1Temp = '';
-	my $pair2Temp = '';
+	my $pair1FastqcZip = '';
+	my $pair2FastqcZip = '';
 	
 	my $rerunFastqcFiles = '';
 	
@@ -93,15 +98,21 @@ sub qualityTrimming{
 	
 	print STDERR "R1 prefix: $pair1File\n";
 	
-	$pair1Trimmed = $pair1File.".trimmed.fastq.gz";
-	# $pair1Temp = $pair1File.".temp.fastq.gz";
+	$pair1Trimmed = $cutadaptOut.'/'.$pair1File.".trimmed.fastq.gz";
+	$pair1FastqcZip = $pair1File.'_fastqc.zip';
 	
-	if(-e "$fastqcOut/$pair1File\_fastqc/fastqc_data.txt"){
+	if(-e "$fastqcOut/$pair1FastqcZip"){
+		## upzip the FastQC output		
+		system("cd $fastqcOut
+		unzip -o $pair1FastqcZip");
+		
+		## get over-represented sequences
 		$adapterFwd = &getOverrepresentedSeqs("$fastqcOut/$pair1File\_fastqc/fastqc_data.txt", $adapterFwd);
 		print "Adapters to remove from the $sampleInfo->{1} file: ", $adapterFwd,"\n",$illuminaAdapters,"\n";
+		
 	}
 	else{
-		print STDERR "Cannot find the $fastqcOut/$pair1File\_fastqc/fastqc_data.txt file\n";
+		print STDERR "Cannot find the FastQC report $fastqcOut/$pair1FastqcZip\n";
 		die;
 	}
 	
@@ -135,10 +146,15 @@ sub qualityTrimming{
 		
 		print STDERR "R2 prefix: $pair2File\n";
 				
-		$pair2Trimmed = $pair2File.".trimmed.fastq.gz";
-		# $pair2Temp = $pair2File.".temp.fastq.gz";
+		$pair2Trimmed = $cutadaptOut.'/'.$pair2File.".trimmed.fastq.gz";
+		$pair2FastqcZip = $pair2File.'_fastqc.zip';
+
+		if(-e "$fastqcOut/$pair2FastqcZip"){
+			## upzip the FastQC output
+			system("cd $fastqcOut
+			unzip -o $pair2FastqcZip");
 		
-		if(-e "$fastqcOut/$pair2File\_fastqc/fastqc_data.txt"){
+			## get over-represented sequences
 			$adapterRev = &getOverrepresentedSeqs("$fastqcOut/$pair2File\_fastqc/fastqc_data.txt", $adapterRev);
 			
 			$adapterRev =~ s/-b/-B/g;
@@ -147,8 +163,8 @@ sub qualityTrimming{
 			
 			#Run cutadapt in paired end mode
 			system("echo Trimming files $sampleInfo->{1} and $sampleInfo->{2} using paired end mode
-			echo Command: cutadapt -f fastq -j 0 -q 20 -q 20 $adapterFwd $adapterRev $illuminaAdapters --minimum-length 25 --minimum-length 25 -o $pair1Trimmed -p $pair2Trimmed $sampleInfo->{1} $sampleInfo->{2}
-			cutadapt -f fastq -j 0 -q 20 -q 20 $adapterFwd $adapterRev $illuminaAdapters --minimum-length 25 --minimum-length 25 -o $pair1Trimmed -p $pair2Trimmed $sampleInfo->{1} $sampleInfo->{2}");
+			echo Command: $cutadaptPE $adapterFwd $adapterRev $illuminaAdapters -o $pair1Trimmed -p $pair2Trimmed $sampleInfo->{1} $sampleInfo->{2}
+			$cutadaptPE $adapterFwd $adapterRev $illuminaAdapters -o $pair1Trimmed -p $pair2Trimmed $sampleInfo->{1} $sampleInfo->{2}");
 			
 			if($? != 0){
 				print STDERR "Cutadapt failed while Trimming files $sampleInfo->{1} and $sampleInfo->{2} using paired end mode\n";
@@ -163,7 +179,7 @@ sub qualityTrimming{
 			
 		}
 		else{
-			print STDERR "Cannot find the $fastqcOut/$pair2File\_fastqc/fastqc_data.txt file\n";
+			print STDERR "Cannot find the FastQC report $fastqcOut/$pair2FastqcZip\n";
 			die;
 		}
 		
@@ -171,8 +187,8 @@ sub qualityTrimming{
 	else{
 		#run cutadapt for single end data
 		system("echo Trimming file $sampleInfo->{1} from single end data
-		echo Command: cutadapt -f fastq -j 0 -q 20 $adapterFwd $illuminaAdapters --minimum-length 25 -o $pair1Trimmed $sampleInfo->{1}
-		cutadapt -f fastq -j 0 -q 20 $adapterFwd $illuminaAdapters --minimum-length 25 -o $pair1Trimmed $sampleInfo->{1}");
+		echo Command: $cutadaptSE $adapterFwd $illuminaAdapters -o $pair1Trimmed $sampleInfo->{1}
+		$cutadaptSE $adapterFwd $illuminaAdapters -o $pair1Trimmed $sampleInfo->{1}");
 		
 		if($? != 0){
 			print STDERR "Cutadapt failed for single end data: $sampleInfo->{1}\n";
