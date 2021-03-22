@@ -9,7 +9,7 @@ Download the `fastqc_cutadpt` folder and run as described below.
 
 ### Usage
 ```Perl
-perl fqstqcCutadapt.pl -1 <R1.fastq> -2 <R2.fastq>
+perl fqstqcCutadapt.pl -1 <R1.fastq.gz> -2 <R2.fastq.gz>
 ```
 
 ### Help
